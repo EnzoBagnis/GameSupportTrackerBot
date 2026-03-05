@@ -14,7 +14,7 @@ CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 60))
 RAILWAY_TOKEN  = os.getenv("RAILWAY_TOKEN")       # Token API Railway
 RAILWAY_VAR_NAME = "SERVERS_CONFIG"               # Nom de la variable Railway
 
-SPREADSHEET_ID = "1iuzDTOAvdoNe8Ne8i461qGNucg5OuEoF-Ikqs8aUQZw"
+SPREADSHEET_ID = "14d9fOZgkotiXewDySGzQ216ZZLRFcyLLcKPLMRRheh8"
 
 SHEETS = [
     {"name": "Playable Worlds", "gid": "58422002",   "colonne": 0},
@@ -41,7 +41,7 @@ def load_config() -> dict:
 def save_config(config: dict):
     """Sauvegarde la config dans Railway via leur API GraphQL."""
     if not RAILWAY_TOKEN:
-        print("RAILWAY_TOKEN manquant, config non sauvegardée en ligne.")
+        print("⚠️ RAILWAY_TOKEN manquant, config non sauvegardée en ligne.")
         return
 
     # Récupère d'abord le serviceId et environmentId
@@ -96,7 +96,7 @@ def save_config(config: dict):
         service_id = service["id"]
         env_id     = env["id"]
     except Exception as e:
-        print(f"Impossible de récupérer les IDs Railway : {e}")
+        print(f"❌ Impossible de récupérer les IDs Railway : {e}")
         return
 
     # Upsert la variable
@@ -121,9 +121,9 @@ def save_config(config: dict):
         headers=headers
     )
     if result.status_code == 200:
-        print("Config sauvegardée sur Railway.")
+        print("✅ Config sauvegardée sur Railway.")
     else:
-        print(f"Erreur sauvegarde Railway : {result.text}")
+        print(f"❌ Erreur sauvegarde Railway : {result.text}")
 
 
 # ── Google Sheets ──
@@ -157,7 +157,7 @@ async def on_message(message):
 
     if message.content.strip() == "!setchannel":
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("Tu dois être administrateur pour faire ça.")
+            await message.channel.send("❌ Tu dois être administrateur pour faire ça.")
             return
 
         config = load_config()
@@ -170,13 +170,13 @@ async def on_message(message):
         }
 
         await message.channel.send(
-            f"Ce salon est maintenant configuré pour recevoir les notifications Archipelago !\n"
+            f"✅ Ce salon est maintenant configuré pour recevoir les notifications Archipelago !\n"
             f"Le bot surveillera **Playable Worlds** et **Core Verified**."
         )
 
     if message.content.strip() == "!removechannel":
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("Tu dois être administrateur pour faire ça.")
+            await message.channel.send("❌ Tu dois être administrateur pour faire ça.")
             return
 
         config = load_config()
@@ -184,9 +184,9 @@ async def on_message(message):
             del config[str(message.guild.id)]
             save_config(config)
             known_games.pop(str(message.guild.id), None)
-            await message.channel.send("Les notifications ont été désactivées sur ce serveur.")
+            await message.channel.send("✅ Les notifications ont été désactivées sur ce serveur.")
         else:
-            await message.channel.send("⚠Aucun salon n'était configuré sur ce serveur.")
+            await message.channel.send("⚠️ Aucun salon n'était configuré sur ce serveur.")
 
     if message.content.strip() == "!status":
         config = load_config()
@@ -195,12 +195,12 @@ async def on_message(message):
             channel = client.get_channel(int(config[guild_id]))
             total = sum(len(v) for v in known_games.get(guild_id, {}).values())
             await message.channel.send(
-                f"Bot actif — notifications dans {channel.mention}\n"
-                f"{total} jeux suivis au total."
+                f"✅ Bot actif — notifications dans {channel.mention}\n"
+                f"📋 {total} jeux suivis au total."
             )
         else:
             await message.channel.send(
-                "⚠Aucun salon configuré. Un admin peut faire `!setchannel` dans le salon souhaité."
+                "⚠️ Aucun salon configuré. Un admin peut faire `!setchannel` dans le salon souhaité."
             )
 
 
@@ -213,7 +213,7 @@ async def check_for_new_games():
     for sheet in SHEETS:
         title = get_sheet_name_by_gid(sheet["gid"])
         sheet["title"] = title if title else sheet["name"]
-        print(f"  '{sheet['name']}' → '{sheet['title']}'")
+        print(f"  ✅ '{sheet['name']}' → '{sheet['title']}'")
 
     config = load_config()
     for guild_id in config:
@@ -221,7 +221,7 @@ async def check_for_new_games():
             sheet["name"]: get_games_from_sheet(sheet["title"], sheet["colonne"])
             for sheet in SHEETS
         }
-        print(f"Serveur {guild_id} chargé.")
+        print(f"✅ Serveur {guild_id} chargé.")
 
     while not client.is_closed():
         await asyncio.sleep(CHECK_INTERVAL)
@@ -244,9 +244,9 @@ async def check_for_new_games():
                     new     = current - known_games[guild_id][sheet["name"]]
 
                     for game in new:
-                        print(f"[{guild_id}] Nouveau jeu dans '{sheet['name']}' : {game}")
+                        print(f"🎮 [{guild_id}] Nouveau jeu dans '{sheet['name']}' : {game}")
                         await channel.send(
-                            f"**Nouveau jeu ajouté dans __{sheet['name']}__ !**\n"
+                            f"🎮 **Nouveau jeu ajouté dans __{sheet['name']}__ !**\n"
                             f"> `{game}`\n"
                             f"@everyone"
                         )
@@ -254,12 +254,12 @@ async def check_for_new_games():
                     known_games[guild_id][sheet["name"]] = current
 
         except Exception as e:
-            print(f"Erreur : {e}")
+            print(f"❌ Erreur : {e}")
 
 
 @client.event
 async def on_ready():
-    print(f"Bot connecté : {client.user}")
+    print(f"✅ Bot connecté : {client.user}")
     client.loop.create_task(check_for_new_games())
 
 
