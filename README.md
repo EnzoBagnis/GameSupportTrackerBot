@@ -27,7 +27,7 @@ Once the bot is in your server, follow these steps:
 Go to the channel where you want the bot to send notifications and type:
 
 ```
-!setchannel
+/setchannel
 ```
 
 The bot will now send a message in that channel whenever a new game is added to the spreadsheet.
@@ -41,13 +41,13 @@ The bot will now send a message in that channel whenever a new game is added to 
 If you want the bot to ping a specific role instead of @everyone, use:
 
 ```
-!setrole @RoleName
+/setrole @RoleName
 ```
 
 Or with a role ID:
 
 ```
-!setrole 123456789012345678
+/setrole 123456789012345678
 ```
 
 > You must be a server administrator to use this command.
@@ -58,11 +58,11 @@ Or with a role ID:
 
 | Command | Description | Required Permission |
 |---|---|---|
-| `!setchannel` | Set the current channel as the notification channel | Administrator |
-| `!setrole @Role` | Set a role to be pinged for new game notifications | Administrator |
-| `!removerole` | Remove the configured role (bot will ping @everyone instead) | Administrator |
-| `!removechannel` | Disable all notifications on this server | Administrator |
-| `!status` | Show the current configuration (channel, role, number of tracked games) | Anyone |
+| `/setchannel` | Set the current channel as the notification channel | Administrator |
+| `/setrole @Role` | Set a role to be pinged for new game notifications | Administrator |
+| `/removerole` | Remove the configured role (bot will ping @everyone instead) | Administrator |
+| `/removechannel` | Disable all notifications on this server | Administrator |
+| `/status` | Show the current configuration (channel, role, number of tracked games) | Anyone |
 
 ---
 

@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 import asyncio
 import requests
 import os
@@ -25,6 +26,7 @@ SHEETS = [
 intents                 = discord.Intents.default()
 intents.message_content = True
 client                  = discord.Client(intents=intents)
+tree                    = app_commands.CommandTree(client)
 known_games             = {}
 
 
@@ -96,105 +98,87 @@ def get_ping(config: dict, guild_id: str) -> str:
     return "@everyone"
 
 
-# -- Commandes Discord --
+# -- Slash Commands --
 
-@client.event
-async def on_message(message):
-    if message.author.bot:
-        return
+@tree.command(name="setchannel", description="Set this channel to receive Archipelago game notifications")
+@app_commands.checks.has_permissions(administrator=True)
+async def setchannel(interaction: discord.Interaction):
+    config = load_config()
+    config[str(interaction.guild.id)] = str(interaction.channel.id)
+    save_config(config)
+    known_games[str(interaction.guild.id)] = {
+        sheet["name"]: get_games_from_sheet(sheet["title"], sheet["colonne"])
+        for sheet in SHEETS
+    }
+    await interaction.response.send_message(
+        "This channel is now configured to receive Archipelago notifications.\n"
+        "The bot will monitor **Playable Worlds** and **Core Verified**."
+    )
 
-    if message.content.strip() == "!setchannel":
-        if not message.author.guild_permissions.administrator:
-            await message.channel.send("Tu dois etre administrateur pour faire ca.")
-            return
-        config = load_config()
-        config[str(message.guild.id)] = str(message.channel.id)
+@tree.command(name="setrole", description="Set a role to ping when a new game is added")
+@app_commands.describe(role="The role to ping")
+@app_commands.checks.has_permissions(administrator=True)
+async def setrole(interaction: discord.Interaction, role: discord.Role):
+    config = load_config()
+    config[str(interaction.guild.id) + "_role"] = str(role.id)
+    save_config(config)
+    await interaction.response.send_message(
+        f"{role.mention} will now be pinged when a new game is added."
+    )
+
+@tree.command(name="removerole", description="Remove the custom role and revert to @everyone")
+@app_commands.checks.has_permissions(administrator=True)
+async def removerole(interaction: discord.Interaction):
+    config = load_config()
+    key = str(interaction.guild.id) + "_role"
+    if key in config:
+        del config[key]
         save_config(config)
-        known_games[str(message.guild.id)] = {
-            sheet["name"]: get_games_from_sheet(sheet["title"], sheet["colonne"])
-            for sheet in SHEETS
-        }
-        await message.channel.send(
-            "Ce salon est maintenant configure pour recevoir les notifications Archipelago !\n"
-            "Le bot surveillera **Playable Worlds** et **Core Verified**."
+        await interaction.response.send_message("Role removed. The bot will now ping @everyone.")
+    else:
+        await interaction.response.send_message("No role was configured.")
+
+@tree.command(name="removechannel", description="Disable Archipelago notifications on this server")
+@app_commands.checks.has_permissions(administrator=True)
+async def removechannel(interaction: discord.Interaction):
+    config = load_config()
+    guild_id = str(interaction.guild.id)
+    if guild_id in config:
+        del config[guild_id]
+        config.pop(guild_id + "_role", None)
+        save_config(config)
+        known_games.pop(guild_id, None)
+        await interaction.response.send_message("Notifications have been disabled on this server.")
+    else:
+        await interaction.response.send_message("No channel was configured.")
+
+@tree.command(name="status", description="Show the current bot configuration for this server")
+async def status(interaction: discord.Interaction):
+    config = load_config()
+    guild_id = str(interaction.guild.id)
+    if guild_id in config:
+        channel = client.get_channel(int(config[guild_id]))
+        total   = sum(len(v) for v in known_games.get(guild_id, {}).values())
+        role_id = config.get(guild_id + "_role")
+        role    = interaction.guild.get_role(int(role_id)) if role_id else None
+        ping    = role.mention if role else "@everyone"
+        await interaction.response.send_message(
+            f"Bot active - notifications in {channel.mention}\n"
+            f"Ping : {ping}\n"
+            f"{total} games tracked."
+        )
+    else:
+        await interaction.response.send_message(
+            "No channel configured. An admin can run `/setchannel` to set one up."
         )
 
-    if message.content.strip().startswith("!setrole"):
-        if not message.author.guild_permissions.administrator:
-            await message.channel.send("Tu dois etre administrateur pour faire ca.")
-            return
-        parts = message.content.strip().split()
-        if len(parts) < 2:
-            await message.channel.send(
-                "Usage : `!setrole @RoleName` ou `!setrole ROLE_ID`"
-            )
-            return
-        # Accepte soit une mention de role soit un ID brut
-        raw = parts[1]
-        if raw.startswith("<@&") and raw.endswith(">"):
-            role_id = raw[3:-1]
-        else:
-            role_id = raw
-
-        # Verifie que le role existe sur ce serveur
-        role = message.guild.get_role(int(role_id))
-        if not role:
-            await message.channel.send("Role introuvable sur ce serveur. Verifie l'ID ou la mention.")
-            return
-
-        config = load_config()
-        config[str(message.guild.id) + "_role"] = role_id
-        save_config(config)
-        await message.channel.send(
-            f"Le role {role.mention} sera desormais ping pour chaque nouveau jeu."
-        )
-
-    if message.content.strip() == "!removerole":
-        if not message.author.guild_permissions.administrator:
-            await message.channel.send("Tu dois etre administrateur pour faire ca.")
-            return
-        config = load_config()
-        key = str(message.guild.id) + "_role"
-        if key in config:
-            del config[key]
-            save_config(config)
-            await message.channel.send("Le role a ete retire. Le bot pingera @everyone a la place.")
-        else:
-            await message.channel.send("Aucun role n'etait configure.")
-
-    if message.content.strip() == "!removechannel":
-        if not message.author.guild_permissions.administrator:
-            await message.channel.send("Tu dois etre administrateur pour faire ca.")
-            return
-        config = load_config()
-        guild_id = str(message.guild.id)
-        if guild_id in config:
-            del config[guild_id]
-            config.pop(guild_id + "_role", None)
-            save_config(config)
-            known_games.pop(guild_id, None)
-            await message.channel.send("Les notifications ont ete desactivees sur ce serveur.")
-        else:
-            await message.channel.send("Aucun salon n'etait configure sur ce serveur.")
-
-    if message.content.strip() == "!status":
-        config = load_config()
-        guild_id = str(message.guild.id)
-        if guild_id in config:
-            channel = client.get_channel(int(config[guild_id]))
-            total   = sum(len(v) for v in known_games.get(guild_id, {}).values())
-            role_id = config.get(guild_id + "_role")
-            role    = message.guild.get_role(int(role_id)) if role_id else None
-            ping    = role.mention if role else "@everyone"
-            await message.channel.send(
-                f"Bot actif - notifications dans {channel.mention}\n"
-                f"Role ping : {ping}\n"
-                f"{total} jeux suivis au total."
-            )
-        else:
-            await message.channel.send(
-                "Aucun salon configure. Un admin peut faire `!setchannel` dans le salon souhaite."
-            )
+@setchannel.error
+@setrole.error
+@removerole.error
+@removechannel.error
+async def permission_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("You need administrator permissions to use this command.", ephemeral=True)
 
 
 # -- Boucle de verification --
@@ -244,7 +228,7 @@ async def check_for_new_games():
                     for game in new:
                         print(f"[{guild_id}] Nouveau jeu dans '{sheet['name']}' : {game}")
                         await channel.send(
-                            f"Nouveau jeu ajoute dans **{sheet['name']}** !\n"
+                            f"New game added in **{sheet['name']}** !\n"
                             f"> `{game}`\n"
                             f"{ping}"
                         )
@@ -258,6 +242,8 @@ async def check_for_new_games():
 @client.event
 async def on_ready():
     print(f"Bot connecte : {client.user}")
+    await tree.sync()
+    print("Slash commands synchronisees.")
     client.loop.create_task(check_for_new_games())
 
 
