@@ -27,17 +27,35 @@ intents.message_content = True
 client                  = discord.Client(intents=intents)
 known_games             = {}
 
-# -- Redis --
+
+# -- Redis avec retry au demarrage --
 
 def get_redis():
-    return redis.from_url(REDIS_URL, decode_responses=True)
+    return redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=5)
+
+def wait_for_redis(max_attempts=10):
+    for attempt in range(1, max_attempts + 1):
+        try:
+            r = get_redis()
+            r.ping()
+            print(f"Redis connecte apres {attempt} tentative(s).")
+            return True
+        except Exception as e:
+            print(f"Redis pas encore pret (tentative {attempt}/{max_attempts}) : {e}")
+            import time
+            time.sleep(3)
+    print("Impossible de se connecter a Redis.")
+    return False
 
 def load_config() -> dict:
     try:
         r   = get_redis()
         raw = r.get("servers_config")
         if raw:
+            print(f"Config chargee depuis Redis : {raw}")
             return json.loads(raw)
+        else:
+            print("Aucune config trouvee dans Redis.")
     except Exception as e:
         print(f"Erreur lecture Redis : {e}")
     return {}
@@ -46,7 +64,7 @@ def save_config(config: dict):
     try:
         r = get_redis()
         r.set("servers_config", json.dumps(config))
-        print("Config sauvegardee dans Redis.")
+        print(f"Config sauvegardee dans Redis : {json.dumps(config)}")
     except Exception as e:
         print(f"Erreur sauvegarde Redis : {e}")
 
@@ -136,13 +154,17 @@ async def check_for_new_games():
         sheet["title"] = title if title else sheet["name"]
         print(f"  '{sheet['name']}' -> '{sheet['title']}'")
 
+    # Attendre Redis puis charger la config
+    wait_for_redis()
     config = load_config()
+    print(f"Nombre de serveurs configures : {len(config)}")
+
     for guild_id in config:
         known_games[guild_id] = {
             sheet["name"]: get_games_from_sheet(sheet["title"], sheet["colonne"])
             for sheet in SHEETS
         }
-        print(f"Serveur {guild_id} charge.")
+        print(f"Serveur {guild_id} charge avec {sum(len(v) for v in known_games[guild_id].values())} jeux.")
 
     while not client.is_closed():
         await asyncio.sleep(CHECK_INTERVAL)
