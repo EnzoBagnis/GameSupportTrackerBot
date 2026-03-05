@@ -10,24 +10,22 @@ load_dotenv()
 # ── CONFIG ──────────────────────────────────────────
 DISCORD_TOKEN  = os.getenv("DISCORD_TOKEN")
 API_KEY        = os.getenv("GOOGLE_API_KEY")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 60))
-CONFIG_FILE    = "servers_config.json"  # Sauvegarde les salons configurés
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 30))
+CONFIG_FILE    = "servers_config.json"
 
-SPREADSHEET_ID = "1iuzDTOAvdoNe8Ne8i461qGNucg5OuEoF-Ikqs8aUQZw"
+# 🧪 SHEETS DE TEST
+SPREADSHEET_ID = "1fnzhztyJ07Bfz3EMWqpzP1Q4b1i4KTL0Hm72OCRAtmI"
 
 SHEETS = [
-    {"name": "Playable Worlds", "gid": "58422002",   "colonne": 0},
-    {"name": "Core Verified",   "gid": "1675722515", "colonne": 0},
+    {"name": "Test", "gid": "0", "colonne": 0},
 ]
 # ────────────────────────────────────────────────────
 
 intents                 = discord.Intents.default()
 intents.message_content = True
 client                  = discord.Client(intents=intents)
-known_games             = {}  # { guild_id: { sheet_name: set() } }
+known_games             = {}
 
-
-# ── Sauvegarde / chargement de la config des serveurs ──
 
 def load_config() -> dict:
     if os.path.exists(CONFIG_FILE):
@@ -39,8 +37,6 @@ def save_config(config: dict):
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
-
-# ── Google Sheets ──
 
 def get_sheet_name_by_gid(gid: str) -> str | None:
     url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}?key={API_KEY}"
@@ -62,14 +58,11 @@ def get_games_from_sheet(sheet_title: str, colonne: int) -> set:
     return {row[colonne] for row in rows[1:] if len(row) > colonne}
 
 
-# ── Commandes Discord ──
-
 @client.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # Commande !setchannel — réservée aux admins
     if message.content.strip() == "!setchannel":
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ Tu dois être administrateur pour faire ça.")
@@ -85,11 +78,10 @@ async def on_message(message):
         }
 
         await message.channel.send(
-            f"✅ Ce salon est maintenant configuré pour recevoir les notifications Archipelago !\n"
-            f"Le bot surveillera **Playable Worlds** et **Core Verified**."
+            f"✅ Salon configuré ! Le bot surveille le **Sheets de test**.\n"
+            f"Ajoute une ligne dans le Sheets pour tester 🎮"
         )
 
-    # Commande !removechannel — pour désactiver les notifs
     if message.content.strip() == "!removechannel":
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ Tu dois être administrateur pour faire ça.")
@@ -100,11 +92,10 @@ async def on_message(message):
             del config[str(message.guild.id)]
             save_config(config)
             known_games.pop(str(message.guild.id), None)
-            await message.channel.send("✅ Les notifications ont été désactivées sur ce serveur.")
+            await message.channel.send("✅ Notifications désactivées.")
         else:
-            await message.channel.send("⚠️ Aucun salon n'était configuré sur ce serveur.")
+            await message.channel.send("⚠️ Aucun salon configuré.")
 
-    # Commande !status — affiche l'état du bot
     if message.content.strip() == "!status":
         config = load_config()
         guild_id = str(message.guild.id)
@@ -113,27 +104,21 @@ async def on_message(message):
             total = sum(len(v) for v in known_games.get(guild_id, {}).values())
             await message.channel.send(
                 f"✅ Bot actif — notifications dans {channel.mention}\n"
-                f"📋 {total} jeux suivis au total."
+                f"📋 {total} entrées suivies au total."
             )
         else:
-            await message.channel.send(
-                "⚠️ Aucun salon configuré. Un admin peut faire `!setchannel` dans le salon souhaité."
-            )
+            await message.channel.send("⚠️ Aucun salon configuré. Tape `!setchannel`.")
 
-
-# ── Boucle de vérification ──
 
 async def check_for_new_games():
     await client.wait_until_ready()
 
-    # Résolution des noms d'onglets
     print("🔍 Résolution des onglets...")
     for sheet in SHEETS:
         title = get_sheet_name_by_gid(sheet["gid"])
         sheet["title"] = title if title else sheet["name"]
         print(f"  ✅ '{sheet['name']}' → '{sheet['title']}'")
 
-    # Chargement initial pour les serveurs déjà configurés
     config = load_config()
     for guild_id in config:
         known_games[guild_id] = {
@@ -163,9 +148,9 @@ async def check_for_new_games():
                     new     = current - known_games[guild_id][sheet["name"]]
 
                     for game in new:
-                        print(f"🎮 [{guild_id}] Nouveau jeu dans '{sheet['name']}' : {game}")
+                        print(f"🧪 [{guild_id}] Nouvelle entrée : {game}")
                         await channel.send(
-                            f"🎮 **Nouveau jeu ajouté dans __{sheet['name']}__ !**\n"
+                            f"🧪 **[TEST] Nouvelle entrée détectée !**\n"
                             f"> `{game}`\n"
                             f"@everyone"
                         )
