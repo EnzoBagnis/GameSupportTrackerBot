@@ -8,11 +8,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── CONFIG ──────────────────────────────────────────
-DISCORD_TOKEN  = os.getenv("DISCORD_TOKEN")
-API_KEY        = os.getenv("GOOGLE_API_KEY")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 60))
-RAILWAY_TOKEN  = os.getenv("RAILWAY_TOKEN")       # Token API Railway
-RAILWAY_VAR_NAME = "SERVERS_CONFIG"               # Nom de la variable Railway
+DISCORD_TOKEN    = os.getenv("DISCORD_TOKEN")
+API_KEY          = os.getenv("GOOGLE_API_KEY")
+CHECK_INTERVAL   = int(os.getenv("CHECK_INTERVAL", 60))
+RAILWAY_TOKEN    = os.getenv("RAILWAY_TOKEN")
+RAILWAY_VAR_NAME = "SERVERS_CONFIG"
 
 SPREADSHEET_ID = "14d9fOZgkotiXewDySGzQ216ZZLRFcyLLcKPLMRRheh8"
 
@@ -28,10 +28,9 @@ client                  = discord.Client(intents=intents)
 known_games             = {}
 
 
-# ── Sauvegarde persistante via variable d'environnement ──
+# ── Sauvegarde persistante ──
 
 def load_config() -> dict:
-    """Charge la config depuis la variable d'env SERVERS_CONFIG."""
     raw = os.getenv(RAILWAY_VAR_NAME, "{}")
     try:
         return json.loads(raw)
@@ -39,12 +38,16 @@ def load_config() -> dict:
         return {}
 
 def save_config(config: dict):
-    """Sauvegarde la config dans Railway via leur API GraphQL."""
     if not RAILWAY_TOKEN:
         print("⚠️ RAILWAY_TOKEN manquant, config non sauvegardée en ligne.")
         return
 
-    # Récupère d'abord le serviceId et environmentId
+    headers = {
+        "Authorization": f"Bearer {RAILWAY_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    # Étape 1 : récupérer les IDs
     query_ids = """
     query {
       me {
@@ -52,54 +55,40 @@ def save_config(config: dict):
           edges {
             node {
               id
-              name
-              services {
-                edges {
-                  node {
-                    id
-                    name
-                  }
-                }
-              }
-              environments {
-                edges {
-                  node {
-                    id
-                    name
-                  }
-                }
-              }
+              services { edges { node { id name } } }
+              environments { edges { node { id name } } }
             }
           }
         }
       }
     }
     """
-    headers = {
-        "Authorization": f"Bearer {RAILWAY_TOKEN}",
-        "Content-Type": "application/json"
-    }
     resp = requests.post(
         "https://backboard.railway.app/graphql/v2",
         json={"query": query_ids},
         headers=headers
     )
     data = resp.json()
+    print(f"🔍 Railway réponse brute : {json.dumps(data)[:300]}")
 
     try:
-        project   = data["data"]["me"]["projects"]["edges"][0]["node"]
-        service   = project["services"]["edges"][0]["node"]
-        env       = next(
-            e["node"] for e in project["environments"]["edges"]
-            if e["node"]["name"] == "production"
+        projects = data["data"]["me"]["projects"]["edges"]
+        if not projects:
+            print("❌ Aucun projet Railway trouvé.")
+            return
+
+        project  = projects[0]["node"]
+        service  = project["services"]["edges"][0]["node"]
+        envs     = project["environments"]["edges"]
+        env      = next(
+            (e["node"] for e in envs if e["node"]["name"] == "production"),
+            envs[0]["node"]
         )
-        service_id = service["id"]
-        env_id     = env["id"]
     except Exception as e:
-        print(f"❌ Impossible de récupérer les IDs Railway : {e}")
+        print(f"❌ Erreur parsing IDs Railway : {e}")
         return
 
-    # Upsert la variable
+    # Étape 2 : upsert la variable
     mutation = """
     mutation UpsertVariables($input: VariableCollectionUpsertInput!) {
       variableCollectionUpsert(input: $input)
@@ -108,8 +97,8 @@ def save_config(config: dict):
     variables = {
         "input": {
             "projectId": project["id"],
-            "serviceId": service_id,
-            "environmentId": env_id,
+            "serviceId": service["id"],
+            "environmentId": env["id"],
             "variables": {
                 RAILWAY_VAR_NAME: json.dumps(config)
             }
@@ -159,26 +148,22 @@ async def on_message(message):
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ Tu dois être administrateur pour faire ça.")
             return
-
         config = load_config()
         config[str(message.guild.id)] = str(message.channel.id)
         save_config(config)
-
         known_games[str(message.guild.id)] = {
             sheet["name"]: get_games_from_sheet(sheet["title"], sheet["colonne"])
             for sheet in SHEETS
         }
-
         await message.channel.send(
-            f"✅ Ce salon est maintenant configuré pour recevoir les notifications Archipelago !\n"
-            f"Le bot surveillera **Playable Worlds** et **Core Verified**."
+            "✅ Ce salon est maintenant configuré pour recevoir les notifications Archipelago !\n"
+            "Le bot surveillera **Playable Worlds** et **Core Verified**."
         )
 
     if message.content.strip() == "!removechannel":
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ Tu dois être administrateur pour faire ça.")
             return
-
         config = load_config()
         if str(message.guild.id) in config:
             del config[str(message.guild.id)]
