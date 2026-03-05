@@ -41,7 +41,7 @@ def load_config() -> dict:
 def save_config(config: dict):
     """Sauvegarde la config dans Railway via leur API GraphQL."""
     if not RAILWAY_TOKEN:
-        print("⚠RAILWAY_TOKEN manquant, config non sauvegardée en ligne.")
+        print("RAILWAY_TOKEN manquant, config non sauvegardée en ligne.")
         return
 
     # Récupère d'abord le serviceId et environmentId
