@@ -10,14 +10,15 @@ load_dotenv()
 # ── CONFIG ──────────────────────────────────────────
 DISCORD_TOKEN  = os.getenv("DISCORD_TOKEN")
 API_KEY        = os.getenv("GOOGLE_API_KEY")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 30))
-CONFIG_FILE    = "servers_config.json"
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 60))
+RAILWAY_TOKEN  = os.getenv("RAILWAY_TOKEN")       # Token API Railway
+RAILWAY_VAR_NAME = "SERVERS_CONFIG"               # Nom de la variable Railway
 
-# 🧪 SHEETS DE TEST
-SPREADSHEET_ID = "1fnzhztyJ07Bfz3EMWqpzP1Q4b1i4KTL0Hm72OCRAtmI"
+SPREADSHEET_ID = "1iuzDTOAvdoNe8Ne8i461qGNucg5OuEoF-Ikqs8aUQZw"
 
 SHEETS = [
-    {"name": "Test", "gid": "0", "colonne": 0},
+    {"name": "Playable Worlds", "gid": "58422002",   "colonne": 0},
+    {"name": "Core Verified",   "gid": "1675722515", "colonne": 0},
 ]
 # ────────────────────────────────────────────────────
 
@@ -27,16 +28,105 @@ client                  = discord.Client(intents=intents)
 known_games             = {}
 
 
+# ── Sauvegarde persistante via variable d'environnement ──
+
 def load_config() -> dict:
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return {}
+    """Charge la config depuis la variable d'env SERVERS_CONFIG."""
+    raw = os.getenv(RAILWAY_VAR_NAME, "{}")
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
 
 def save_config(config: dict):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
+    """Sauvegarde la config dans Railway via leur API GraphQL."""
+    if not RAILWAY_TOKEN:
+        print("⚠️ RAILWAY_TOKEN manquant, config non sauvegardée en ligne.")
+        return
 
+    # Récupère d'abord le serviceId et environmentId
+    query_ids = """
+    query {
+      me {
+        projects {
+          edges {
+            node {
+              id
+              name
+              services {
+                edges {
+                  node {
+                    id
+                    name
+                  }
+                }
+              }
+              environments {
+                edges {
+                  node {
+                    id
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    headers = {
+        "Authorization": f"Bearer {RAILWAY_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    resp = requests.post(
+        "https://backboard.railway.app/graphql/v2",
+        json={"query": query_ids},
+        headers=headers
+    )
+    data = resp.json()
+
+    try:
+        project   = data["data"]["me"]["projects"]["edges"][0]["node"]
+        service   = project["services"]["edges"][0]["node"]
+        env       = next(
+            e["node"] for e in project["environments"]["edges"]
+            if e["node"]["name"] == "production"
+        )
+        service_id = service["id"]
+        env_id     = env["id"]
+    except Exception as e:
+        print(f"❌ Impossible de récupérer les IDs Railway : {e}")
+        return
+
+    # Upsert la variable
+    mutation = """
+    mutation UpsertVariables($input: VariableCollectionUpsertInput!) {
+      variableCollectionUpsert(input: $input)
+    }
+    """
+    variables = {
+        "input": {
+            "projectId": project["id"],
+            "serviceId": service_id,
+            "environmentId": env_id,
+            "variables": {
+                RAILWAY_VAR_NAME: json.dumps(config)
+            }
+        }
+    }
+    result = requests.post(
+        "https://backboard.railway.app/graphql/v2",
+        json={"query": mutation, "variables": variables},
+        headers=headers
+    )
+    if result.status_code == 200:
+        print("✅ Config sauvegardée sur Railway.")
+    else:
+        print(f"❌ Erreur sauvegarde Railway : {result.text}")
+
+
+# ── Google Sheets ──
 
 def get_sheet_name_by_gid(gid: str) -> str | None:
     url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}?key={API_KEY}"
@@ -58,6 +148,8 @@ def get_games_from_sheet(sheet_title: str, colonne: int) -> set:
     return {row[colonne] for row in rows[1:] if len(row) > colonne}
 
 
+# ── Commandes Discord ──
+
 @client.event
 async def on_message(message):
     if message.author.bot:
@@ -78,8 +170,8 @@ async def on_message(message):
         }
 
         await message.channel.send(
-            f"✅ Salon configuré ! Le bot surveille le **Sheets de test**.\n"
-            f"Ajoute une ligne dans le Sheets pour tester 🎮"
+            f"✅ Ce salon est maintenant configuré pour recevoir les notifications Archipelago !\n"
+            f"Le bot surveillera **Playable Worlds** et **Core Verified**."
         )
 
     if message.content.strip() == "!removechannel":
@@ -92,9 +184,9 @@ async def on_message(message):
             del config[str(message.guild.id)]
             save_config(config)
             known_games.pop(str(message.guild.id), None)
-            await message.channel.send("✅ Notifications désactivées.")
+            await message.channel.send("✅ Les notifications ont été désactivées sur ce serveur.")
         else:
-            await message.channel.send("⚠️ Aucun salon configuré.")
+            await message.channel.send("⚠️ Aucun salon n'était configuré sur ce serveur.")
 
     if message.content.strip() == "!status":
         config = load_config()
@@ -104,11 +196,15 @@ async def on_message(message):
             total = sum(len(v) for v in known_games.get(guild_id, {}).values())
             await message.channel.send(
                 f"✅ Bot actif — notifications dans {channel.mention}\n"
-                f"📋 {total} entrées suivies au total."
+                f"📋 {total} jeux suivis au total."
             )
         else:
-            await message.channel.send("⚠️ Aucun salon configuré. Tape `!setchannel`.")
+            await message.channel.send(
+                "⚠️ Aucun salon configuré. Un admin peut faire `!setchannel` dans le salon souhaité."
+            )
 
+
+# ── Boucle de vérification ──
 
 async def check_for_new_games():
     await client.wait_until_ready()
@@ -148,9 +244,9 @@ async def check_for_new_games():
                     new     = current - known_games[guild_id][sheet["name"]]
 
                     for game in new:
-                        print(f"🧪 [{guild_id}] Nouvelle entrée : {game}")
+                        print(f"🎮 [{guild_id}] Nouveau jeu dans '{sheet['name']}' : {game}")
                         await channel.send(
-                            f"🧪 **[TEST] Nouvelle entrée détectée !**\n"
+                            f"🎮 **Nouveau jeu ajouté dans __{sheet['name']}__ !**\n"
                             f"> `{game}`\n"
                             f"@everyone"
                         )
