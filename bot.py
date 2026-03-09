@@ -184,6 +184,7 @@ async def permission_error(interaction: discord.Interaction, error: app_commands
 # -- Boucle de verification --
 
 async def check_for_new_games():
+    global sheets_resolved
     await client.wait_until_ready()
 
     print("Resolution des onglets...")
@@ -191,21 +192,35 @@ async def check_for_new_games():
         title = get_sheet_name_by_gid(sheet["gid"])
         sheet["title"] = title if title else sheet["name"]
         print(f"  '{sheet['name']}' -> '{sheet['title']}'")
+    sheets_resolved = True
 
     wait_for_redis()
     config = load_config()
     print(f"Nombre de serveurs configures : {len([k for k in config if '_role' not in k])}")
 
+    # Charger known_games depuis Redis si disponible
+    saved = load_known_games()
+    if saved:
+        known_games.update(saved)
+        print(f"known_games restaure depuis Redis ({len(saved)} serveur(s)).")
+
     for guild_id in [k for k in config if "_role" not in k]:
-        known_games[guild_id] = {
-            sheet["name"]: get_games_from_sheet(sheet["title"], sheet["colonne"])
-            for sheet in SHEETS
-        }
-        print(f"Serveur {guild_id} charge avec {sum(len(v) for v in known_games[guild_id].values())} jeux.")
+        if guild_id not in known_games:
+            known_games[guild_id] = {
+                sheet["name"]: get_games_from_sheet(sheet["title"], sheet["colonne"])
+                for sheet in SHEETS
+            }
+            print(f"Serveur {guild_id} charge avec {sum(len(v) for v in known_games[guild_id].values())} jeux.")
+        else:
+            print(f"Serveur {guild_id} restaure depuis Redis avec {sum(len(v) for v in known_games[guild_id].values())} jeux.")
+
+    # Sauvegarde initiale
+    save_known_games(known_games)
 
     while not client.is_closed():
         await asyncio.sleep(CHECK_INTERVAL)
         config = load_config()
+        changed = False
         try:
             for guild_id, channel_id in [(k, v) for k, v in config.items() if "_role" not in k]:
                 channel = client.get_channel(int(channel_id))
@@ -217,6 +232,7 @@ async def check_for_new_games():
                         sheet["name"]: get_games_from_sheet(sheet["title"], sheet["colonne"])
                         for sheet in SHEETS
                     }
+                    save_known_games(known_games)
                     continue
 
                 ping = get_ping(config, guild_id)
@@ -234,9 +250,14 @@ async def check_for_new_games():
                         )
 
                     known_games[guild_id][sheet["name"]] = current
+                    if new:
+                        changed = True
 
         except Exception as e:
             print(f"Erreur : {e}")
+
+        if changed:
+            save_known_games(known_games)
 
 
 @client.event
