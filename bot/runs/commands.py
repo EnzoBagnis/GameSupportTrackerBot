@@ -1,9 +1,11 @@
+import re
+from datetime import datetime
 import discord
 from discord import app_commands
 
 from redis_client import load_runs, save_runs
-from runs.logic   import refresh_run_message, send_recap
-from runs.modals  import CreerRunModal
+from runs.models import new_run, build_run_embed
+from runs.view import RunView # Correct import based on previous context
 
 
 def register_run_commands(tree: app_commands.CommandTree, get_client):
@@ -11,8 +13,90 @@ def register_run_commands(tree: app_commands.CommandTree, get_client):
 
     @tree.command(name="creer_run", description="Créer une annonce d'inscription pour une run Archipelago")
     @app_commands.checks.has_permissions(manage_events=True)
-    async def creer_run(interaction: discord.Interaction):
-        await interaction.response.send_modal(CreerRunModal())
+    @app_commands.describe(
+        titre="Nom de la run",
+        date_limite="Date limite (format: JJ/MM/AAAA HH:MM)",
+        max_joueurs="Nombre max de joueurs (0 = illimité)",
+        salon_annonce="Salon où poster l'annonce (vide = salon actuel)",
+        salon_recap="Salon pour le récapitulatif (optionnel)"
+    )
+    async def creer_run(
+        interaction: discord.Interaction,
+        titre: str,
+        date_limite: str = None,
+        max_joueurs: int = 0,
+        salon_annonce: discord.TextChannel = None,
+        salon_recap: discord.TextChannel = None
+    ):
+        # Validation de la date si fournie
+        formatted_deadline = None
+        if date_limite:
+            # Essayer de parser la date pour vérifier le format
+            try:
+                # Accepte JJ/MM/AAAA HH:MM ou JJ/MM HH:MM
+                dt = None
+                formats = ["%d/%m/%Y %H:%M", "%d/%m %H:%M"]
+                for fmt in formats:
+                    try:
+                        dt = datetime.strptime(date_limite, fmt)
+                        # Si l'année est manquante, on suppose l'année courante ou suivante
+                        if "%Y" not in fmt:
+                             now = datetime.now()
+                             dt = dt.replace(year=now.year)
+                             if dt < now:
+                                 dt = dt.replace(year=now.year + 1)
+                        break
+                    except ValueError:
+                        continue
+
+                if not dt:
+                    await interaction.response.send_message(
+                        "❌ Format de date invalide. Utilisez `JJ/MM/AAAA HH:MM` (ex: 20/04/2026 21:00)",
+                        ephemeral=True
+                    )
+                    return
+                # On stocke en string standard pour l'affichage/Redis
+                formatted_deadline = dt.strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                await interaction.response.send_message("❌ Erreur lors de l'analyse de la date.", ephemeral=True)
+                return
+
+        destination_channel = salon_annonce or interaction.channel
+        recap_channel_id = salon_recap.id if salon_recap else None
+
+        # Création de l'objet Run
+        run = new_run(
+            title=titre,
+            host_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+            channel_id=destination_channel.id,
+            deadline=formatted_deadline,
+            max_players=max_joueurs or None,
+            recap_channel_id=recap_channel_id,
+        )
+
+        try:
+            embed = build_run_embed(run)
+            view = RunView(run)
+            msg = await destination_channel.send(embed=embed, view=view)
+
+            run["message_id"] = msg.id
+            runs = load_runs()
+            runs[run["run_id"]] = run
+            save_runs(runs)
+
+            await interaction.response.send_message(
+                f"✅ Run **{run['title']}** créée dans {destination_channel.mention} ! (ID: `{run['run_id']}`)",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+             await interaction.response.send_message(
+                f"❌ Je n'ai pas la permission d'envoyer des messages dans {destination_channel.mention}.",
+                ephemeral=True
+            )
+        except Exception as e:
+             await interaction.response.send_message(f"❌ Erreur inattendue : {e}", ephemeral=True)
+
 
     @tree.command(name="runs_actives", description="Lister les runs ouvertes sur ce serveur")
     async def runs_actives(interaction: discord.Interaction):
