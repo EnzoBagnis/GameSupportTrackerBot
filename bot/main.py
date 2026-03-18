@@ -43,7 +43,7 @@ async def on_message(message: discord.Message):
 
     # Trouve la run ouverte à laquelle ce joueur est inscrit
     target_run_id = next(
-        (rid for rid, r in runs.items() if r["open"] and uid in r.get("players", {})),
+        (rid for rid, r in runs.items() if r["open"] and uid in r.get("players", {}) and r["channel_id"] == message.channel.id),
         None,
     )
     if not target_run_id:

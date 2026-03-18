@@ -50,18 +50,18 @@ async def send_recap(client: discord.Client, run: dict) -> None:
     titre   = run["title"]
     run_id  = run["run_id"]
 
-    total_files = sum(len(p['yaml_files']) + len(p['apworld_files']) for p in joueurs.values())
+    total_files = sum(len(p['yaml_files']) for p in joueurs.values())
 
     lines = [
         f"# Récap — {titre}\n",
-        f"**Joueurs inscrits :** {len(joueurs)} | **Fichiers reçus :** {total_files}\n",
+        f"**Joueurs inscrits :** {len(joueurs)} | **Jeux :** {total_files}\n",
     ]
 
     for uid, pdata in joueurs.items():
         jeux    = ", ".join(pdata.get("games", [])) or "—"
 
-        nb_files = len(pdata.get('yaml_files', [])) + len(pdata.get('apworld_files', []))
-        files_str = f" ({nb_files} fichiers reçus)" if nb_files > 0 else ""
+        nb_files = len(pdata.get('yaml_files', []))
+        files_str = f" ({nb_files} jeux)" if nb_files > 0 else ""
 
         already_note = pdata.get("already_note", "")
         note_str = f" [Note: {already_note}]" if already_note else ""
