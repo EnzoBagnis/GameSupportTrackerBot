@@ -28,7 +28,7 @@ class InscriptionModal(Modal, title="S'inscrire à la run"):
         runs = load_runs()
         run  = runs.get(self.run_id)
         if not run or not run["open"]:
-            await interaction.followup.send("❌ Cette run est fermée ou introuvable.", ephemeral=True)
+            await interaction.followup.send("Cette run est fermée ou introuvable.", ephemeral=True)
             return
 
         uid         = str(interaction.user.id)
@@ -57,7 +57,7 @@ class InscriptionModal(Modal, title="S'inscrire à la run"):
         from bot_instance import bot_client
         await refresh_run_message(bot_client, run)
 
-        from runs.views import UploadView
+        from runs.view import UploadView # Correct import
         if already:
             msg = (
                 "✅ Inscription enregistrée !\n"
@@ -68,7 +68,8 @@ class InscriptionModal(Modal, title="S'inscrire à la run"):
             msg = (
                 "✅ Inscription enregistrée !\n"
                 "**Dépose maintenant tes fichiers** YAML et/ou APWorld en pièce jointe "
-                "dans n'importe quel salon — le bot les transmettra automatiquement au host."
+                "dans n'importe quel salon.\n"
+                "⚠️ **Si tes fichiers sont trop volumineux (sans Nitro)**, envoie-les directement en MP au host."
             )
 
         await interaction.followup.send(msg, view=UploadView(self.run_id), ephemeral=True)

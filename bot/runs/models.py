@@ -46,39 +46,24 @@ def build_run_embed(run: dict) -> discord.Embed:
     joueurs  = run.get("players", {})
     nb       = len(joueurs)
     max_str  = f"/{max_p}" if max_p else ""
-    statut   = "🟢 Ouverte" if run["open"] else "🔴 Fermée"
+    statut   = "Ouverte" if run["open"] else "Fermée"
 
     embed = discord.Embed(
-        title       = f"🏝️ Inscription — {run['title']}",
-        description = (
-            "Clique sur **S'inscrire** pour participer à cette run Archipelago.\n"
-            "Tu pourras préciser tes jeux et déposer tes fichiers YAML / APWorld."
-        ),
-        color = discord.Color.teal() if run["open"] else discord.Color.greyple(),
+        title=f"Archipelago Run — {run['title']}",
+        color=discord.Color.green() if run["open"] else discord.Color.red()
     )
-    embed.add_field(name="📅 Date limite",  value=deadline,              inline=True)
-    embed.add_field(name="👥 Inscrits",     value=f"{nb}{max_str}",      inline=True)
-    embed.add_field(name="🔑 Host",         value=f"<@{run['host_id']}>", inline=True)
-    embed.add_field(name="📌 Statut",       value=statut,                inline=True)
+    embed.add_field(name="Date limite", value=deadline, inline=True)
+    embed.add_field(name="Joueurs inscrits", value=f"{nb}{max_str}", inline=True)
+    embed.add_field(name="Statut", value=statut, inline=True)
+    embed.add_field(name="Host", value=f"<@{run['host_id']}>", inline=False)
 
-    if joueurs:
-        lines = []
-        for uid, pdata in joueurs.items():
-            jeux  = ", ".join(pdata.get("games", [])) or "—"
-            yamls = pdata.get("yaml_files", [])
-            apws  = pdata.get("apworld_files", [])
+    if nb > 0:
+        names = [f"• {p['pseudo']}" for p in joueurs.values()]
+        # Limite d'affichage simple
+        txt = "\n".join(names[:20])
+        if len(names) > 20:
+            txt += f"\n... et {len(names) - 20} autres"
+        embed.add_field(name="Participants", value=txt, inline=False)
 
-            fichiers = []
-            if yamls:
-                fichiers.append(f"📄 {len(yamls)} YAML")
-            if apws:
-                fichiers.append(f"🌐 {len(apws)} APWorld")
-            fichiers_str = f" [{', '.join(fichiers)}]" if fichiers else ""
-
-            deja_str = " *(fichiers déjà connus)*" if pdata.get("already_provided") else ""
-            lines.append(f"• <@{uid}> — {jeux}{fichiers_str}{deja_str}")
-
-        embed.add_field(name="📋 Joueurs", value="\n".join(lines), inline=False)
-
-    embed.set_footer(text=f"Run ID : {run['run_id']}")
+    embed.set_footer(text=f"ID: {run['run_id']}")
     return embed

@@ -1,6 +1,8 @@
 import asyncio
 import io
 import discord
+from discord.ext import tasks # Import tasks for background loop
+from datetime import datetime
 
 from bot_instance import bot_client, tree
 from config       import DISCORD_TOKEN, CHECK_INTERVAL, SHEETS, YAML_EXTENSIONS, APWORLD_EXTENSIONS
@@ -12,6 +14,7 @@ from redis_client import (
 from sheets               import get_sheet_name_by_gid, get_games_from_sheet
 from runs.view            import RunView
 from runs.commands        import register_run_commands
+from runs.logic           import close_run # Import close_run
 from commands.admin       import register_admin_commands
 
 # Dictionnaire partagé des jeux connus (guild_id → {sheet_name → set})
@@ -49,12 +52,17 @@ async def on_message(message: discord.Message):
     run   = runs[target_run_id]
     pdata = run["players"][uid]
 
+    files_to_send_to_host = []
+
     for a in yamls:
         if a.filename not in pdata["yaml_files"]:
             pdata["yaml_files"].append(a.filename)
+            files_to_send_to_host.append(a)
+
     for a in apworlds:
         if a.filename not in pdata["apworld_files"]:
             pdata["apworld_files"].append(a.filename)
+            files_to_send_to_host.append(a)
 
     runs[target_run_id] = run
     save_runs(runs)
@@ -67,7 +75,7 @@ async def on_message(message: discord.Message):
         except Exception:
             host = None
 
-    if host:
+    if host and files_to_send_to_host:
         try:
             already_flag = pdata.get("already_provided", False)
             note_str     = (
@@ -79,17 +87,47 @@ async def on_message(message: discord.Message):
                 f"Joueur : <@{uid}> ({pdata['pseudo']})\n"
                 f"Jeux : {', '.join(pdata['games'])}{note_str}"
             )
-            files_to_send = []
-            for att in message.attachments:
-                if att.filename.lower().endswith(YAML_EXTENSIONS + APWORLD_EXTENSIONS):
-                    data = await att.read()
-                    files_to_send.append(discord.File(io.BytesIO(data), filename=att.filename))
 
-            await host.send(dm_content, files=files_to_send)
+            # Read files to send
+            attachments_to_send = []
+            for att in files_to_send_to_host:
+                 data = await att.read()
+                 attachments_to_send.append(discord.File(io.BytesIO(data), filename=att.filename))
+
+            await host.send(dm_content, files=attachments_to_send)
         except discord.Forbidden:
             print(f"Impossible d'envoyer un DM au host {run['host_id']}")
 
-    await message.add_reaction("✅")
+    # Auto-delete user message to keep channel clean
+    try:
+        await message.delete()
+    except discord.Forbidden:
+        pass # Bot doesn't have permission to delete messages
+    except Exception as e:
+        print(f"Error deleting message: {e}")
+
+
+# ── Background Task: Check Deadlines ────────────────────────
+@tasks.loop(seconds=60)
+async def check_deadlines():
+    runs = load_runs()
+    now = datetime.now()
+
+    for run_id, run in runs.items():
+        if run["open"] and run.get("deadline"):
+            try:
+                deadline_dt = datetime.strptime(run["deadline"], "%d/%m/%Y %H:%M")
+                if now > deadline_dt:
+                    print(f"Deadline atteinte pour la run {run_id} ({run['deadline']}). Fermeture...")
+                    await close_run(bot_client, run_id)
+            except ValueError:
+                print(f"Format de date invalide pour la run {run_id}: {run['deadline']}")
+            except Exception as e:
+                print(f"Erreur lors de la fermeture automatique de la run {run_id}: {e}")
+
+@check_deadlines.before_loop
+async def before_check_deadlines():
+    await bot_client.wait_until_ready()
 
 
 # ── Boucle Google Sheets ─────────────────────────────────────
@@ -169,20 +207,18 @@ async def check_for_new_games():
 
 @bot_client.event
 async def on_ready():
-    print(f"Bot connecté : {bot_client.user}")
+    print(f'Bot connect : {bot_client.user}')
+    runs = load_runs()
+    print(f"{len(runs)} run(s) active(s) restaure(s).")
+    try:
+        synced = await tree.sync()
+        print(f"Slash commands synchronises.")
+    except Exception as e:
+        print(e)
 
-    # Restaure les vues persistantes des runs encore ouvertes
-    runs      = load_runs()
-    nb_active = 0
-    for run in runs.values():
-        if run["open"]:
-            bot_client.add_view(RunView(run))
-            nb_active += 1
-    print(f"{nb_active} run(s) active(s) restaurée(s).")
-
-    await tree.sync()
-    print("Slash commands synchronisées.")
-    bot_client.loop.create_task(check_for_new_games())
+    # Start background tasks
+    if not check_deadlines.is_running():
+        check_deadlines.start()
 
 
 # ── Lancement ─────────────────────────────────────────────────

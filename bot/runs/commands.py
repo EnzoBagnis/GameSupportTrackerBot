@@ -6,6 +6,7 @@ from discord import app_commands
 from redis_client import load_runs, save_runs
 from runs.models import new_run, build_run_embed
 from runs.view import RunView # Correct import based on previous context
+from runs.logic import close_run
 
 
 def register_run_commands(tree: app_commands.CommandTree, get_client):
@@ -51,14 +52,14 @@ def register_run_commands(tree: app_commands.CommandTree, get_client):
 
                 if not dt:
                     await interaction.response.send_message(
-                        "❌ Format de date invalide. Utilisez `JJ/MM/AAAA HH:MM` (ex: 20/04/2026 21:00)",
+                        "Format de date invalide. Utilisez `JJ/MM/AAAA HH:MM` (ex: 20/04/2026 21:00)",
                         ephemeral=True
                     )
                     return
                 # On stocke en string standard pour l'affichage/Redis
                 formatted_deadline = dt.strftime("%d/%m/%Y %H:%M")
             except Exception:
-                await interaction.response.send_message("❌ Erreur lors de l'analyse de la date.", ephemeral=True)
+                await interaction.response.send_message("Erreur lors de l'analyse de la date.", ephemeral=True)
                 return
 
         destination_channel = salon_annonce or interaction.channel
@@ -86,16 +87,16 @@ def register_run_commands(tree: app_commands.CommandTree, get_client):
             save_runs(runs)
 
             await interaction.response.send_message(
-                f"✅ Run **{run['title']}** créée dans {destination_channel.mention} ! (ID: `{run['run_id']}`)",
+                f"Run **{run['title']}** créée dans {destination_channel.mention} ! (ID: `{run['run_id']}`)",
                 ephemeral=True
             )
         except discord.Forbidden:
              await interaction.response.send_message(
-                f"❌ Je n'ai pas la permission d'envoyer des messages dans {destination_channel.mention}.",
+                f"Je n'ai pas la permission d'envoyer des messages dans {destination_channel.mention}.",
                 ephemeral=True
             )
         except Exception as e:
-             await interaction.response.send_message(f"❌ Erreur inattendue : {e}", ephemeral=True)
+             await interaction.response.send_message(f"Erreur inattendue : {e}", ephemeral=True)
 
 
     @tree.command(name="runs_actives", description="Lister les runs ouvertes sur ce serveur")
@@ -132,28 +133,27 @@ def register_run_commands(tree: app_commands.CommandTree, get_client):
         run  = runs.get(run_id)
 
         if not run:
-            await interaction.response.send_message("❌ Run introuvable.", ephemeral=True)
+            await interaction.response.send_message("Run introuvable.", ephemeral=True)
             return
         if interaction.user.id != run["host_id"]:
-            await interaction.response.send_message("❌ Seul le host peut fermer la run.", ephemeral=True)
+            await interaction.response.send_message("Seul le host peut fermer la run.", ephemeral=True)
             return
         if not run["open"]:
             await interaction.response.send_message("Cette run est déjà fermée.", ephemeral=True)
             return
 
-        run["open"] = False
-        runs[run_id] = run
-        save_runs(runs)
-
         client = get_client()
-        await refresh_run_message(client, run)
-        await interaction.response.send_message("🔒 Run fermée ! Envoi du récap…", ephemeral=True)
-        await send_recap(client, run, interaction.guild)
+        success = await close_run(client, run_id)
+
+        if success:
+            await interaction.response.send_message("Run fermée ! Envoi du récap…", ephemeral=True)
+        else:
+            await interaction.response.send_message("Erreur lors de la fermeture de la run.", ephemeral=True)
 
     @creer_run.error
     async def creer_run_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message(
-                "❌ Tu n'as pas la permission de créer des runs (besoin de `Manage Events`).",
+                "Tu n'as pas la permission de créer des runs (besoin de `Manage Events`).",
                 ephemeral=True,
             )

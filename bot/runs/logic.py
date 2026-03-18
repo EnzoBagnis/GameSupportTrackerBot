@@ -1,5 +1,30 @@
 import discord
 from runs.models import build_run_embed
+from redis_client import load_runs, save_runs
+
+
+async def close_run(client: discord.Client, run_id: str) -> bool:
+    """
+    Ferme la run, met à jour le statut, et envoie le récap.
+    Retourne True si la fermeture a réussi.
+    """
+    runs = load_runs()
+    run = runs.get(run_id)
+
+    if not run or not run["open"]:
+        return False
+
+    run["open"] = False
+    runs[run_id] = run
+    save_runs(runs)
+
+    # Mise à jour du message d'annonce
+    await refresh_run_message(client, run)
+
+    # Envoi du récap
+    await send_recap(client, run)
+
+    return True
 
 
 async def refresh_run_message(client: discord.Client, run: dict) -> None:
@@ -19,14 +44,14 @@ async def refresh_run_message(client: discord.Client, run: dict) -> None:
         print(f"Erreur refresh message run '{run.get('run_id')}' : {e}")
 
 
-async def send_recap(client: discord.Client, run: dict, guild: discord.Guild) -> None:
+async def send_recap(client: discord.Client, run: dict) -> None:
     """Génère et envoie le récap au salon dédié (si configuré) et en DM au host."""
     joueurs = run.get("players", {})
     titre   = run["title"]
     run_id  = run["run_id"]
 
     lines = [
-        f"# 🏝️ Récap — {titre} (`{run_id}`)\n",
+        f"# Récap — {titre} (`{run_id}`)\n",
         f"**Host :** <@{run['host_id']}>",
         f"**Joueurs inscrits :** {len(joueurs)}\n",
     ]
@@ -42,14 +67,14 @@ async def send_recap(client: discord.Client, run: dict, guild: discord.Guild) ->
         already = pdata.get("already_provided", False)
         note    = pdata.get("already_note", "")
 
-        status_str = f"\n  ⚠️ *Déjà fournis déclaré : « {note} »*" if already else ""
+        status_str = f"\n  *Déjà fournis déclaré : « {note} »*" if already else ""
         lines.append(f"• **{pdata['pseudo']}** (<@{uid}>) — {jeux}{status_str}")
 
         if yamls:
-            lines.append(f"  📄 YAML : {', '.join(yamls)}")
+            lines.append(f"  YAML : {', '.join(yamls)}")
             total_yamls.extend(yamls)
         if apws:
-            lines.append(f"  🌐 APWorld : {', '.join(apws)}")
+            lines.append(f"  APWorld : {', '.join(apws)}")
             total_apworlds.extend(apws)
 
         if already:
@@ -57,7 +82,7 @@ async def send_recap(client: discord.Client, run: dict, guild: discord.Guild) ->
 
     lines.append("")
     if already_list:
-        lines.append(f"⚠️ **Joueurs ayant déclaré des fichiers déjà connus :** {', '.join(already_list)}")
+        lines.append(f"**Joueurs ayant déclaré des fichiers déjà connus :** {', '.join(already_list)}")
     lines.append(f"📄 **Total YAML reçus :** {len(total_yamls)}")
     lines.append(f"🌐 **Total APWorld reçus :** {len(total_apworlds)}")
 
