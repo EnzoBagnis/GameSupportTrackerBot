@@ -217,6 +217,11 @@ async def check_for_new_games():
 @bot_client.event
 async def on_ready():
     print(f'Bot connect : {bot_client.user}')
+
+    # 🟢 NEW: Print invite link with permissions
+    invite_url = f"https://discord.com/api/oauth2/authorize?client_id={bot_client.user.id}&permissions=8&scope=bot%20applications.commands"
+    print(f"Invite Link (Admin): {invite_url}")
+
     runs = load_runs()
     print(f"{len(runs)} run(s) active(s) restaure(s).")
     try:

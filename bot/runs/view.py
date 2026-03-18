@@ -70,7 +70,9 @@ class RunView(View):
             return
 
         await interaction.response.send_message(
-            "Envoie tes fichiers YAML et/ou APWorld **en pièce jointe dans n'importe quel salon**.\n"
+            "Pour envoyer tes fichiers :\n"
+            "1. **Glisse et dépose** tes fichiers `.yaml` ou `.apworld` directement dans la zone de texte de ce salon (ou utilise le bouton `+`).\n"
+            "2. Appuie sur **Entrée** pour envoyer le message.\n"
             "Le bot les détectera et les transmettra automatiquement au host.\n\n"
             "⚠️ **Si tes fichiers sont trop volumineux (sans Nitro)**, envoie-les directement en MP au host.",
             view=UploadView(self.run_id),
@@ -100,7 +102,7 @@ class RunView(View):
         await refresh_run_message(bot_client, run)
         await interaction.response.send_message("Tu as été désinscrit(e).", ephemeral=True)
 
-    @discord.ui.button(label="Fermer / Récap", style=discord.ButtonStyle.secondary,
+    @discord.ui.button(label="Fermer / Récap (Host)", style=discord.ButtonStyle.secondary, # Updated label
                        custom_id="btn_fermer")
     async def fermer(self, interaction: discord.Interaction, button: Button):
         run_id, run = self._resolve_run(interaction.message.id)
