@@ -67,6 +67,7 @@ async def on_message(message: discord.Message):
     runs[target_run_id] = run
     save_runs(runs)
 
+    # 🟢 NEW: File deletion logic guaranteed via try/finally or direct call
     # Envoi au host en DM
     host = bot_client.get_user(run["host_id"])
     if not host:
@@ -99,10 +100,18 @@ async def on_message(message: discord.Message):
             print(f"Impossible d'envoyer un DM au host {run['host_id']}")
 
     # Auto-delete user message to keep channel clean
+    # Move this logic UP or inside a critical block if we want it guaranteed even if host DM fails (which is caught)
+    # Since DM errors are caught above, this runs.
+    # However, if 'message.delete()' failed before (maybe permission issue?), let's retry or log.
     try:
-        await message.delete()
+        if message.channel.permissions_for(message.guild.me).manage_messages:
+             await message.delete()
+        else:
+             print(f"Manque la permission 'Manage Messages' dans {message.channel}")
+    except discord.NotFound:
+        pass # Already deleted
     except discord.Forbidden:
-        pass # Bot doesn't have permission to delete messages
+        print(f"Impossible de supprimer le message dans {message.channel} (Permission manquante?)")
     except Exception as e:
         print(f"Error deleting message: {e}")
 

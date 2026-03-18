@@ -51,40 +51,16 @@ async def send_recap(client: discord.Client, run: dict) -> None:
     run_id  = run["run_id"]
 
     lines = [
-        f"# Récap — {titre} (`{run_id}`)\n",
-        f"**Host :** <@{run['host_id']}>",
+        f"# Récap — {titre}\n",
         f"**Joueurs inscrits :** {len(joueurs)}\n",
     ]
 
-    total_yamls    = []
-    total_apworlds = []
-    already_list   = []
-
     for uid, pdata in joueurs.items():
         jeux    = ", ".join(pdata.get("games", [])) or "—"
-        yamls   = pdata.get("yaml_files", [])
-        apws    = pdata.get("apworld_files", [])
-        already = pdata.get("already_provided", False)
-        note    = pdata.get("already_note", "")
+        already_note = pdata.get("already_note", "")
+        note_str = f" [Note: {already_note}]" if already_note else ""
 
-        status_str = f"\n  *Déjà fournis déclaré : « {note} »*" if already else ""
-        lines.append(f"• **{pdata['pseudo']}** (<@{uid}>) — {jeux}{status_str}")
-
-        if yamls:
-            lines.append(f"  YAML : {', '.join(yamls)}")
-            total_yamls.extend(yamls)
-        if apws:
-            lines.append(f"  APWorld : {', '.join(apws)}")
-            total_apworlds.extend(apws)
-
-        if already:
-            already_list.append(f"{pdata['pseudo']} (<@{uid}>)")
-
-    lines.append("")
-    if already_list:
-        lines.append(f"**Joueurs ayant déclaré des fichiers déjà connus :** {', '.join(already_list)}")
-    lines.append(f"📄 **Total YAML reçus :** {len(total_yamls)}")
-    lines.append(f"🌐 **Total APWorld reçus :** {len(total_apworlds)}")
+        lines.append(f"• **{pdata['pseudo']}** — {jeux}{note_str}")
 
     recap_text = "\n".join(lines)
 
