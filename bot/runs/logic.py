@@ -63,10 +63,9 @@ async def send_recap(client: discord.Client, run: dict) -> None:
         nb_files = len(pdata.get('yaml_files', []))
         files_str = f" ({nb_files} jeux)" if nb_files > 0 else ""
 
-        already_note = pdata.get("already_note", "")
-        note_str = f" [Note: {already_note}]" if already_note else ""
 
-        lines.append(f"• **{pdata['pseudo']}** — {jeux}{files_str}{note_str}")
+
+        lines.append(f"• **{pdata['pseudo']}** — {jeux}{files_str}")
 
     recap_text = "\n".join(lines)
 
