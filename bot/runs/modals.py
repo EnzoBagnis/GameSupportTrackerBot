@@ -62,20 +62,20 @@ class InscriptionModal(Modal, title="S'inscrire à la run"):
 
         saved_files = load_user_files(uid)
 
-        if already:
-            msg = (
-                "Inscription enregistrée !\n"
-                "Tu as indiqué que tes fichiers ont déjà été fournis. "
-                "Tu peux quand même en déposer de nouveaux ci-dessous si besoin."
-            )
-            await interaction.followup.send(msg, view=UploadView(self.run_id), ephemeral=True)
-        elif saved_files:
+        if saved_files:
             msg = (
                 "Inscription enregistrée !\n"
                 "Tu as des fichiers sauvegardés ! Choisis ceux a envoyer au host, "
                 "ou depose de nouveaux fichiers."
             )
             await interaction.followup.send(msg, view=SavedFilesView(self.run_id, uid, saved_files), ephemeral=True)
+        elif already:
+            msg = (
+                "Inscription enregistrée !\n"
+                "Tu as indiqué que tes fichiers ont déjà été fournis. "
+                "Tu peux quand même en déposer de nouveaux ci-dessous si besoin."
+            )
+            await interaction.followup.send(msg, view=UploadView(self.run_id), ephemeral=True)
         else:
             msg = (
                 "Inscription enregistrée !\n"
