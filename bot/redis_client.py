@@ -129,3 +129,24 @@ def get_run_by_message(message_id: int) -> tuple[str | None, dict | None]:
         if run.get("message_id") == message_id:
             return run_id, run
     return None, None
+
+
+# ── User saved files ────────────────────────────────────────
+
+def load_user_files(user_id: str) -> list:
+    """Charge les fichiers sauvegardés d'un utilisateur."""
+    try:
+        raw = get_redis().get(f"user_files:{user_id}")
+        if raw:
+            return json.loads(raw)
+    except Exception as e:
+        print(f"Erreur lecture fichiers utilisateur {user_id} : {e}")
+    return []
+
+
+def save_user_files(user_id: str, files: list) -> None:
+    """Sauvegarde les fichiers d'un utilisateur (max 25)."""
+    try:
+        get_redis().set(f"user_files:{user_id}", json.dumps(files[-25:]))
+    except Exception as e:
+        print(f"Erreur sauvegarde fichiers utilisateur {user_id} : {e}")

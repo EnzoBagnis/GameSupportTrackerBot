@@ -57,19 +57,30 @@ class InscriptionModal(Modal, title="S'inscrire à la run"):
         from bot_instance import bot_client
         await refresh_run_message(bot_client, run)
 
-        from runs.view import UploadView # Correct import
+        from runs.view import UploadView, SavedFilesView
+        from redis_client import load_user_files
+
+        saved_files = load_user_files(uid)
+
         if already:
             msg = (
-                "✅ Inscription enregistrée !\n"
+                "Inscription enregistrée !\n"
                 "Tu as indiqué que tes fichiers ont déjà été fournis. "
                 "Tu peux quand même en déposer de nouveaux ci-dessous si besoin."
             )
+            await interaction.followup.send(msg, view=UploadView(self.run_id), ephemeral=True)
+        elif saved_files:
+            msg = (
+                "Inscription enregistrée !\n"
+                "Tu as des fichiers sauvegardés ! Choisis ceux a envoyer au host, "
+                "ou depose de nouveaux fichiers."
+            )
+            await interaction.followup.send(msg, view=SavedFilesView(self.run_id, uid, saved_files), ephemeral=True)
         else:
             msg = (
-                "✅ Inscription enregistrée !\n"
+                "Inscription enregistrée !\n"
                 "**Dépose maintenant tes fichiers** YAML et/ou APWorld en pièce jointe "
-                "dans n'importe quel salon.\n"
-                "⚠️ **Si tes fichiers sont trop volumineux (sans Nitro)**, envoie-les directement en MP au host."
+                "dans ce salon.\n"
+                "Si tes fichiers sont trop volumineux (sans Nitro), envoie-les directement en MP au host."
             )
-
-        await interaction.followup.send(msg, view=UploadView(self.run_id), ephemeral=True)
+            await interaction.followup.send(msg, view=UploadView(self.run_id), ephemeral=True)

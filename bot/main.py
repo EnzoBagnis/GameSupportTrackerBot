@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import discord
 from discord.ext import tasks # Import tasks for background loop
@@ -10,6 +11,7 @@ from redis_client import (
     wait_for_redis, load_config, save_config,
     load_known_games, save_known_games,
     load_runs, save_runs,
+    load_user_files, save_user_files,
 )
 from sheets               import get_sheet_name_by_gid, get_games_from_sheet
 from runs.view            import RunView
@@ -52,22 +54,44 @@ async def on_message(message: discord.Message):
     run   = runs[target_run_id]
     pdata = run["players"][uid]
 
+    # Read all file data upfront (before message deletion)
+    file_data = {}
+    for a in yamls + apworlds:
+        try:
+            file_data[a.filename] = await a.read()
+        except Exception as e:
+            print(f"Erreur lecture fichier {a.filename}: {e}")
+
     files_to_send_to_host = []
 
     for a in yamls:
-        if a.filename not in pdata["yaml_files"]:
+        if a.filename in file_data and a.filename not in pdata["yaml_files"]:
             pdata["yaml_files"].append(a.filename)
-            files_to_send_to_host.append(a)
+            files_to_send_to_host.append(a.filename)
 
     for a in apworlds:
-        if a.filename not in pdata["apworld_files"]:
+        if a.filename in file_data and a.filename not in pdata["apworld_files"]:
             pdata["apworld_files"].append(a.filename)
-            files_to_send_to_host.append(a)
+            files_to_send_to_host.append(a.filename)
 
     runs[target_run_id] = run
     save_runs(runs)
 
-    # 🟢 NEW: File deletion logic guaranteed via try/finally or direct call
+    # Save files to user's personal storage (for reuse across runs)
+    saved_files = load_user_files(uid)
+    for filename, data in file_data.items():
+        file_type = "yaml" if filename.lower().endswith(YAML_EXTENSIONS) else "apworld"
+        encoded = base64.b64encode(data).decode()
+        updated = False
+        for f in saved_files:
+            if f["filename"] == filename:
+                f["data"] = encoded
+                updated = True
+                break
+        if not updated:
+            saved_files.append({"filename": filename, "data": encoded, "type": file_type})
+    save_user_files(uid, saved_files)
+
     # Envoi au host en DM
     host = bot_client.get_user(run["host_id"])
     if not host:
@@ -89,11 +113,9 @@ async def on_message(message: discord.Message):
                 f"Jeux : {', '.join(pdata['games'])}{note_str}"
             )
 
-            # Read files to send
             attachments_to_send = []
-            for att in files_to_send_to_host:
-                 data = await att.read()
-                 attachments_to_send.append(discord.File(io.BytesIO(data), filename=att.filename))
+            for filename in files_to_send_to_host:
+                attachments_to_send.append(discord.File(io.BytesIO(file_data[filename]), filename=filename))
 
             await host.send(dm_content, files=attachments_to_send)
         except discord.Forbidden:
@@ -193,7 +215,21 @@ async def check_for_new_games():
 
                 for sheet in SHEETS:
                     current = get_games_from_sheet(sheet["title"], sheet["colonne"])
-                    new     = current - known_games[guild_id][sheet["name"]]
+
+                    # Skip if API returned empty (likely an error)
+                    if not current:
+                        print(f"[{guild_id}] Aucun jeu retourné pour '{sheet['name']}', skip.")
+                        continue
+
+                    previous = known_games[guild_id][sheet["name"]]
+                    new = current - previous
+
+                    # If too many "new" games, likely a reset — update silently
+                    if len(new) > 10:
+                        print(f"[{guild_id}] {len(new)} nouveaux jeux dans '{sheet['name']}' — probable reset, mise a jour silencieuse.")
+                        known_games[guild_id][sheet["name"]] = current
+                        changed = True
+                        continue
 
                     for game in new:
                         print(f"[{guild_id}] Nouveau jeu dans '{sheet['name']}' : {game}")
